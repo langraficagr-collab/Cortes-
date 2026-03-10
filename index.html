@@ -1,308 +1,221 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Play, RefreshCw, Film, Wand2, Download, Video } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Junção Mágica de Vídeos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { background-color: #0a0a0a; }
+        .transition-opacity { transition: opacity 800ms ease-in-out; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-export default function App() {
-  const [video1, setVideo1] = useState(null);
-  const [video2, setVideo2] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentVideo, setCurrentVideo] = useState(1);
-  const [isRecording, setIsRecording] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState(null);
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
 
-  const video1Ref = useRef(null);
-  const video2Ref = useRef(null);
-  const canvasRef = useRef(null);
-  const animationRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
-  const audioCtxRef = useRef(null);
-  const audioDestRef = useRef(null);
+        // Componente de Ícone Simples para evitar conflitos de biblioteca
+        const Icon = ({ name, className }) => {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, []);
+            return <i data-lucide={name} className={className}></i>;
+        };
 
-  const handleUpload = (e, num) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    if (num === 1) setVideo1(url);
-    else setVideo2(url);
-    setDownloadUrl(null);
-  };
+        function App() {
+            const [video1, setVideo1] = useState(null);
+            const [video2, setVideo2] = useState(null);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [currentVideo, setCurrentVideo] = useState(1);
+            const [isRecording, setIsRecording] = useState(false);
+            const [downloadUrl, setDownloadUrl] = useState(null);
 
-  // Cria um roteamento para extrair e juntar o áudio dos dois vídeos
-  const setupAudioRouting = () => {
-    if (!audioCtxRef.current && video1Ref.current && video2Ref.current) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
-      audioCtxRef.current = ctx;
-      audioDestRef.current = ctx.createMediaStreamDestination();
+            const video1Ref = useRef(null);
+            const video2Ref = useRef(null);
+            const canvasRef = useRef(null);
+            const animationRef = useRef(null);
+            const mediaRecorderRef = useRef(null);
+            const chunksRef = useRef([]);
+            const audioCtxRef = useRef(null);
+            const audioDestRef = useRef(null);
 
-      try {
-        const source1 = ctx.createMediaElementSource(video1Ref.current);
-        source1.connect(audioDestRef.current);
-        source1.connect(ctx.destination); // Saída para as caixas de som
-      } catch (e) { console.log("Erro áudio 1", e); }
+            const handleUpload = (e, num) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const url = URL.createObjectURL(file);
+                if (num === 1) setVideo1(url);
+                else setVideo2(url);
+                setDownloadUrl(null);
+            };
 
-      try {
-        const source2 = ctx.createMediaElementSource(video2Ref.current);
-        source2.connect(audioDestRef.current);
-        source2.connect(ctx.destination);
-      } catch (e) { console.log("Erro áudio 2", e); }
-    }
+            const setupAudioRouting = () => {
+                if (!audioCtxRef.current && video1Ref.current && video2Ref.current) {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    audioCtxRef.current = ctx;
+                    audioDestRef.current = ctx.createMediaStreamDestination();
 
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-  };
+                    [video1Ref.current, video2Ref.current].forEach(video => {
+                        try {
+                            const source = ctx.createMediaElementSource(video);
+                            source.connect(audioDestRef.current);
+                            source.connect(ctx.destination);
+                        } catch (e) { console.warn("Áudio já conectado ou erro: ", e); }
+                    });
+                }
+                if (audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
+            };
 
-  const playCombined = async (record = false) => {
-    if (!video1Ref.current || !video2Ref.current) return;
-    
-    setIsPlaying(true);
-    setCurrentVideo(1);
-    setDownloadUrl(null);
-    setupAudioRouting();
+            const playCombined = async (record = false) => {
+                if (!video1Ref.current || !video2Ref.current) return;
+                
+                setIsPlaying(true);
+                setCurrentVideo(1);
+                setDownloadUrl(null);
+                setupAudioRouting();
 
-    // Reseta os tempos
-    video1Ref.current.currentTime = 0;
-    video2Ref.current.currentTime = 0;
+                video1Ref.current.currentTime = 0;
+                video2Ref.current.currentTime = 0;
 
-    // Inicia a gravação se solicitado
-    if (record === true) {
-      setIsRecording(true);
-      canvasRef.current.width = video1Ref.current.videoWidth || 1280;
-      canvasRef.current.height = video1Ref.current.videoHeight || 720;
-      
-      const canvasStream = canvasRef.current.captureStream(30);
-      const audioStream = audioDestRef.current ? audioDestRef.current.stream : null;
-      
-      // Junta o vídeo do canvas com o áudio misturado dos vídeos
-      const tracks = [...canvasStream.getVideoTracks()];
-      if (audioStream) {
-        tracks.push(...audioStream.getAudioTracks());
-      }
-      const combinedStream = new MediaStream(tracks);
-      
-      mediaRecorderRef.current = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
-      
-      mediaRecorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      
-      mediaRecorderRef.current.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        setDownloadUrl(URL.createObjectURL(blob));
-        chunksRef.current = [];
-        setIsRecording(false);
-      };
-      
-      mediaRecorderRef.current.start();
-      drawFrame(); // Inicia o loop do gravador
-    }
+                if (record) {
+                    setIsRecording(true);
+                    const canvas = canvasRef.current;
+                    canvas.width = video1Ref.current.videoWidth || 1280;
+                    canvas.height = video1Ref.current.videoHeight || 720;
+                    
+                    const tracks = [...canvas.captureStream(30).getVideoTracks()];
+                    if (audioDestRef.current) tracks.push(...audioDestRef.current.stream.getAudioTracks());
+                    
+                    mediaRecorderRef.current = new MediaRecorder(new MediaStream(tracks), { mimeType: 'video/webm' });
+                    mediaRecorderRef.current.ondataavailable = e => chunksRef.current.push(e.data);
+                    mediaRecorderRef.current.onstop = () => {
+                        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+                        setDownloadUrl(URL.createObjectURL(blob));
+                        chunksRef.current = [];
+                        setIsRecording(false);
+                    };
+                    mediaRecorderRef.current.start();
+                    drawFrame();
+                }
 
-    // "Aquece" o vídeo 2 dando um play/pause rápido invisível para o navegador pré-carregar
-    try {
-      video2Ref.current.muted = true;
-      await video2Ref.current.play();
-      video2Ref.current.pause();
-      video2Ref.current.currentTime = 0;
-      video2Ref.current.muted = false;
-    } catch (err) {
-      console.log("Aviso de aquecimento ignorado", err);
-    }
+                try {
+                    video2Ref.current.muted = true;
+                    await video2Ref.current.play();
+                    video2Ref.current.pause();
+                    video2Ref.current.currentTime = 0;
+                    video2Ref.current.muted = false;
+                } catch (err) { console.log("Pré-carregamento ignorado"); }
 
-    // Inicia o primeiro vídeo
-    video1Ref.current.play();
-  };
+                video1Ref.current.play();
+            };
 
-  const drawFrame = () => {
-    if (!canvasRef.current || !video1Ref.current || !video2Ref.current) return;
-    const ctx = canvasRef.current.getContext('2d');
-    const w = canvasRef.current.width;
-    const h = canvasRef.current.height;
+            const drawFrame = () => {
+                const ctx = canvasRef.current.getContext('2d');
+                const { width: w, height: h } = canvasRef.current;
+                ctx.fillStyle = "black";
+                ctx.fillRect(0, 0, w, h);
 
-    ctx.fillRect(0, 0, w, h); // Fundo preto
+                let v2Opacity = 0;
+                const v1 = video1Ref.current;
+                const v2 = video2Ref.current;
 
-    let v2Opacity = 0;
-    const v1 = video1Ref.current;
-    const v2 = video2Ref.current;
+                if (v1 && !v1.ended) {
+                    const timeLeft = v1.duration - v1.currentTime;
+                    if (timeLeft <= 0.8) v2Opacity = 1 - (timeLeft / 0.8);
+                } else { v2Opacity = 1; }
 
-    // Calcula a transição cruzada frame a frame para a gravação
-    if (v1 && !v1.ended && v1.duration) {
-        const timeLeft = v1.duration - v1.currentTime;
-        if (timeLeft <= 0.8) {
-            v2Opacity = 1 - (timeLeft / 0.8);
+                if (v2Opacity < 1 && !v1.ended) {
+                    ctx.globalAlpha = 1;
+                    ctx.drawImage(v1, 0, 0, w, h);
+                }
+                if (v2Opacity > 0) {
+                    ctx.globalAlpha = v2Opacity;
+                    ctx.drawImage(v2, 0, 0, w, h);
+                }
+                animationRef.current = requestAnimationFrame(drawFrame);
+            };
+
+            const handleTimeUpdate = () => {
+                if (currentVideo === 1 && video1Ref.current) {
+                    if (video1Ref.current.duration - video1Ref.current.currentTime <= 0.8) {
+                        setCurrentVideo('crossfade');
+                        video2Ref.current.play();
+                    }
+                }
+            };
+
+            const handleVideo2End = () => {
+                setIsPlaying(false);
+                if (mediaRecorderRef.current?.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                    cancelAnimationFrame(animationRef.current);
+                }
+            };
+
+            return (
+                <div className="min-h-screen text-neutral-100 p-4 sm:p-8 font-sans">
+                    <div className="max-w-3xl mx-auto space-y-6">
+                        <header className="text-center">
+                            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center gap-2">
+                                <Icon name="wand-2" className="w-8 h-8 text-blue-400" />
+                                Junção Mágica
+                            </h1>
+                        </header>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {[1, 2].map(num => (
+                                <div key={num} className="bg-neutral-900 border border-neutral-800 p-4 rounded-xl text-center">
+                                    <h2 className={`${num === 1 ? 'text-blue-400' : 'text-purple-400'} font-semibold mb-2`}>Vídeo {num}</h2>
+                                    <label className="cursor-pointer bg-neutral-800 hover:bg-neutral-700 p-4 rounded-lg flex flex-col items-center transition-all">
+                                        <Icon name="upload" className="w-6 h-6 mb-2 text-neutral-400" />
+                                        <span className="text-sm">{(num === 1 ? video1 : video2) ? "Carregado" : "Escolher"}</span>
+                                        <input type="file" accept="video/*" className="hidden" onChange={(e) => handleUpload(e, num)} />
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl">
+                            <video ref={video1Ref} src={video1} className="absolute inset-0 w-full h-full object-cover" onTimeUpdate={handleTimeUpdate} onEnded={() => setCurrentVideo(2)} playsInline />
+                            <video ref={video2Ref} src={video2} className={`absolute inset-0 w-full h-full object-cover transition-opacity ${currentVideo === 1 ? 'opacity-0' : 'opacity-100'}`} onEnded={handleVideo2End} playsInline />
+                            {!video1 && !video2 && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-600">
+                                    <Icon name="film" className="w-16 h-16 mb-4 opacity-50" />
+                                    <p>Aguardando vídeos...</p>
+                                </div>
+                            )}
+                            <canvas ref={canvasRef} className="hidden" />
+                        </div>
+
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="flex gap-4">
+                                <button onClick={() => playCombined(false)} disabled={!video1 || !video2 || isPlaying} className="px-6 py-3 rounded-full bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 flex items-center gap-2">
+                                    <Icon name="play" className="w-5 h-5" /> Assistir
+                                </button>
+                                <button onClick={() => playCombined(true)} disabled={!video1 || !video2 || isPlaying} className="px-6 py-3 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:scale-105 disabled:opacity-50 flex items-center gap-2">
+                                    <Icon name={isRecording ? "refresh-cw" : "video"} className={`w-5 h-5 ${isRecording ? 'animate-spin' : ''}`} />
+                                    {isRecording ? "Gravando..." : "Gravar"}
+                                </button>
+                            </div>
+
+                            {downloadUrl && (
+                                <a href={downloadUrl} download="video-final.webm" className="flex items-center gap-2 px-8 py-4 rounded-full bg-green-500 text-black font-bold hover:bg-green-400 shadow-lg transition-all">
+                                    <Icon name="download" className="w-6 h-6" /> Baixar Agora
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
         }
-    } else if (v1.ended) {
-        v2Opacity = 1;
-    }
 
-    if (v2Opacity < 1 && !v1.ended) {
-        ctx.globalAlpha = 1;
-        ctx.drawImage(v1, 0, 0, w, h);
-    }
-
-    if (v2Opacity > 0) {
-        ctx.globalAlpha = v2Opacity;
-        ctx.drawImage(v2, 0, 0, w, h);
-    }
-
-    animationRef.current = requestAnimationFrame(drawFrame);
-  };
-
-  const handleTimeUpdate = () => {
-    if (currentVideo === 1 && video1Ref.current) {
-      const timeLeft = video1Ref.current.duration - video1Ref.current.currentTime;
-      
-      // Faltando 0.8 segundos para acabar, inicia o crossfade suave
-      if (timeLeft <= 0.8) {
-        setCurrentVideo('crossfade');
-        // Dá o play no vídeo 2
-        video2Ref.current.play(); 
-      }
-    }
-  };
-
-  const handleVideo1End = () => {
-    setCurrentVideo(2);
-  };
-
-  const handleVideo2End = () => {
-    setIsPlaying(false);
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
-      cancelAnimationFrame(animationRef.current);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 p-4 sm:p-8 font-sans">
-      <div className="max-w-3xl mx-auto space-y-6">
-        
-        <div className="text-center">
-          <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center gap-2">
-            <Wand2 className="w-8 h-8 text-blue-400" />
-            Junção Mágica de Vídeos
-          </h1>
-          <p className="text-neutral-400 mt-2">Envie dois vídeos e assista a transição com efeito disfarçado.</p>
-        </div>
-
-        {/* Área de Uploads */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-xl text-center">
-            <h2 className="text-blue-400 font-semibold mb-2">Vídeo 1</h2>
-            <label className="cursor-pointer bg-neutral-800 hover:bg-neutral-700 p-4 rounded-lg flex flex-col items-center transition-colors">
-              <Upload className="w-6 h-6 mb-2 text-neutral-400" />
-              <span className="text-sm text-neutral-300">
-                {video1 ? "Vídeo Carregado" : "Escolher Vídeo"}
-              </span>
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => handleUpload(e, 1)} />
-            </label>
-          </div>
-
-          <div className="bg-neutral-900 border border-neutral-800 p-4 rounded-xl text-center">
-            <h2 className="text-purple-400 font-semibold mb-2">Vídeo 2</h2>
-            <label className="cursor-pointer bg-neutral-800 hover:bg-neutral-700 p-4 rounded-lg flex flex-col items-center transition-colors">
-              <Upload className="w-6 h-6 mb-2 text-neutral-400" />
-              <span className="text-sm text-neutral-300">
-                {video2 ? "Vídeo Carregado" : "Escolher Vídeo"}
-              </span>
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => handleUpload(e, 2)} />
-            </label>
-          </div>
-        </div>
-
-        {/* Player Principal */}
-        <div className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl">
-          
-          {/* Vídeo 1 */}
-          <video
-            ref={video1Ref}
-            src={video1}
-            preload="auto"
-            className="absolute inset-0 w-full h-full object-cover z-0"
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleVideo1End}
-            playsInline
-          />
-
-          {/* Vídeo 2 */}
-          <video
-            ref={video2Ref}
-            src={video2}
-            preload="auto"
-            className={`absolute inset-0 w-full h-full object-cover z-10 transition-opacity duration-[800ms] ease-in-out ${currentVideo === 1 ? 'opacity-0' : 'opacity-100'}`}
-            onEnded={handleVideo2End}
-            playsInline
-          />
-
-          {/* Estado Vazio */}
-          {!video1 && !video2 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-600 z-30">
-              <Film className="w-16 h-16 mb-4 opacity-50" />
-              <p>Os vídeos aparecerão aqui</p>
-            </div>
-          )}
-
-          {/* Canvas Invisível para Gravação */}
-          <canvas ref={canvasRef} className="hidden" />
-        </div>
-
-        {/* Controles */}
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex justify-center gap-4 w-full flex-wrap">
-            <button
-              onClick={() => playCombined(false)}
-              disabled={!video1 || !video2 || isPlaying || isRecording}
-              className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all ${
-                !video1 || !video2 
-                  ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-                  : isPlaying || isRecording
-                    ? 'bg-blue-600/50 text-white cursor-wait'
-                    : 'bg-neutral-800 hover:bg-neutral-700 text-white'
-              }`}
-            >
-              <Play className="w-5 h-5 fill-current" /> Assistir Apenas
-            </button>
-
-            <button
-              onClick={() => playCombined(true)}
-              disabled={!video1 || !video2 || isPlaying || isRecording}
-              className={`flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all ${
-                !video1 || !video2 
-                  ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-                  : isRecording
-                    ? 'bg-red-500/80 text-white animate-pulse'
-                    : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:scale-105 text-white shadow-lg'
-              }`}
-            >
-              {isRecording ? (
-                <>
-                  <RefreshCw className="w-5 h-5 animate-spin" /> Gravando...
-                </>
-              ) : (
-                <>
-                  <Video className="w-5 h-5" /> Processar e Gravar
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Botão de Download (Aparece após gravar) */}
-          {downloadUrl && (
-            <a
-              href={downloadUrl}
-              download="video-transicao.webm"
-              className="flex items-center gap-2 px-8 py-4 mt-2 rounded-full font-bold text-lg bg-green-500 hover:bg-green-400 text-neutral-950 transition-all hover:scale-105 shadow-xl shadow-green-500/20"
-            >
-              <Download className="w-6 h-6" /> Baixar Vídeo Pronto
-            </a>
-          )}
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-
-
-
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
